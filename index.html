@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weight Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Roboto', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary': '#6200ee',
+                        'primary-variant': '#3700b3',
+                        'secondary': '#03dac6',
+                        'background': '#ffffff',
+                        'surface': '#ffffff',
+                        'error': '#b00020',
+                        'on-primary': '#ffffff',
+                        'on-secondary': '#000000',
+                        'on-background': '#000000',
+                        'on-surface': '#000000',
+                        'on-error': '#ffffff',
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-background min-h-screen flex flex-col">
+    <header class="bg-primary text-on-primary shadow-md">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-medium">Weight Tracker</h1>
+            <div>
+                <button onclick="exportCSV()" class="text-on-primary hover:text-secondary transition duration-300 mr-4">
+                    <i class="fas fa-file-export text-2xl"></i>
+                </button>
+                <button onclick="toggleSettings()" class="text-on-primary hover:text-secondary transition duration-300">
+                    <i class="fas fa-cog text-2xl"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-4 py-8">
+        <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div class="bg-surface rounded-lg shadow-lg p-6 max-w-md w-full">
+                <h2 class="text-xl font-medium text-on-surface mb-4">Settings</h2>
+                <div class="mb-4">
+                    <label for="newGoalWeight" class="block text-sm font-medium text-on-surface mb-2">Goal Weight
+                        (kg)</label>
+                    <input type="number" id="newGoalWeight"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div class="mb-4">
+                    <label for="height" class="block text-sm font-medium text-on-surface mb-2">Height (cm)</label>
+                    <input type="number" id="height"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-on-surface mb-2">Gender</label>
+                    <select id="gender"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <button onclick="saveSettings()"
+                    class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary-variant transition duration-300 shadow-md">Save
+                    Settings</button>
+            </div>
+        </div>
+
+        <div class="bg-surface rounded-lg shadow-lg p-6 max-w-md mx-auto">
+            <div id="weightTracker">
+                <div class="mb-6">
+                    <!-- <h2 class="text-xl font-medium text-on-surface mb-4">Track Your Weight</h2> -->
+                    <label for="weightDate" class="block text-sm font-medium text-on-surface mb-2">Date</label>
+                    <input type="date" id="weightDate"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary mb-4">
+                    <label for="currentWeight" class="block text-sm font-medium text-on-surface mb-2">Weight
+                        (kg)</label>
+                    <input type="number" id="currentWeight" step="0.1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="Enter your weight">
+                    <button onclick="addWeight()"
+                        class="mt-4 w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-secondary-dark transition duration-300 shadow-md">Add
+                        Weight</button>
+                </div>
+
+                <div class="text-center mb-6 p-4 bg-gray-100 rounded-lg">
+                    <p class="text-lg font-medium text-on-surface">To go: <span id="goalWeightDisplay"
+                            class="font-bold">-</span> kg</p>
+                </div>
+
+                <div class="mb-6">
+                    <h2 class="text-xl font-medium text-on-surface mb-4">Weight Trend</h2>
+                    <canvas id="weightChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let weightData = {};
+        let chart;
+        let settings = {
+            goalWeight: null,
+            height: null,
+            gender: null
+        };
+
+        // Initialize date input to today's date
+        document.getElementById('weightDate').valueAsDate = new Date();
+
+        // Load data from local storage
+        function loadFromLocalStorage() {
+            const storedWeightData = localStorage.getItem('weightData');
+            const storedSettings = localStorage.getItem('settings');
+
+            if (storedWeightData) {
+                weightData = JSON.parse(storedWeightData);
+                // get the latest weight from last date
+                latest_date = Object.keys(weightData).sort().reverse()[0];
+                latestWeight = weightData[latest_date];
+                document.getElementById('currentWeightDisplay').textContent = latestWeight;
+
+                // set default value for current weight
+                document.getElementById('currentWeight').value = `${latestWeight}`;
+            }
+
+            if (storedSettings) {
+                settings = JSON.parse(storedSettings);
+                document.getElementById('newGoalWeight').value = settings.goalWeight || '';
+                document.getElementById('height').value = settings.height || '';
+                document.getElementById('gender').value = settings.gender || 'other';
+                updateGoalWeightDisplay();
+            }
+
+            updateChart();
+        }
+
+        // Save data to local storage
+        function saveToLocalStorage() {
+            localStorage.setItem('weightData', JSON.stringify(weightData));
+            localStorage.setItem('settings', JSON.stringify(settings));
+        }
+
+        function toggleSettings() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.toggle('hidden');
+            if (!modal.classList.contains('hidden')) {
+                document.getElementById('newGoalWeight').value = settings.goalWeight || '';
+                document.getElementById('height').value = settings.height || '';
+                document.getElementById('gender').value = settings.gender || 'other';
+            }
+        }
+
+        function saveSettings() {
+            settings.goalWeight = parseFloat(document.getElementById('newGoalWeight').value) || null;
+            settings.height = parseFloat(document.getElementById('height').value) || null;
+            settings.gender = document.getElementById('gender').value;
+
+            updateGoalWeightDisplay();
+            saveToLocalStorage();
+            toggleSettings();
+        }
+
+        function updateGoalWeightDisplay() {
+            document.getElementById('goalWeightDisplay').textContent = settings.goalWeight ? settings.goalWeight : '-';
+        }
+
+        function addWeight() {
+            const date = document.getElementById('weightDate').value;
+            const weight = parseFloat(document.getElementById('currentWeight').value);
+
+            if (date && weight) {
+                weightData[date] = weight;
+                updateChart();
+                // document.getElementById('currentWeight').value = '';
+                document.getElementById('currentWeightDisplay').textContent = weight;
+                saveToLocalStorage();
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('weightChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Weight',
+                        data: [],
+                        borderColor: '#6200ee',
+                        backgroundColor: 'rgba(98, 0, 238, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            const sortedDates = Object.keys(weightData).sort();
+            const weights = sortedDates.map(date => weightData[date]);
+
+            chart.data.labels = sortedDates;
+            chart.data.datasets[0].data = weights;
+            chart.update();
+        }
+
+        function exportCSV() {
+            const sortedDates = Object.keys(weightData).sort();
+            let csvContent = "data:text/csv;charset=utf-8,Date,Weight\n";
+
+            sortedDates.forEach(date => {
+                csvContent += `${date},${weightData[date]}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "weight_data.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Initialize the app
+        initChart();
+        loadFromLocalStorage();
+        updateGoalWeightDisplay();
+    </script>
+</body>
+
+</html>
